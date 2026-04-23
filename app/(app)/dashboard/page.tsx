@@ -1,62 +1,54 @@
 import Link from "next/link";
 import {
   ArrowRight,
-  CalendarClock,
-  CheckCircle2,
-  Circle,
-  Flame,
+  BookOpen,
   Gamepad2,
   Headphones,
   Presentation,
   Sparkles,
-  Target,
-  Trophy,
-  Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { XPBar } from "@/components/xp/XPBar";
+import { SpotifyPlayer } from "@/components/lesson/SpotifyPlayer";
 import {
   getAnnouncements,
-  getCurrentSeason,
-  getLeaderboard,
+  getAllLessons,
   getLessonProgress,
+  getModulesForTrack,
   getNextLesson,
   getProfile,
-  getQuests,
-  getUpcomingEvents,
-  recentClaims,
+  getTracks,
 } from "@/lib/data";
-import { formatNumber, relativeTime } from "@/lib/utils";
+import { pct } from "@/lib/utils";
 
 export const metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
   const profile = await getProfile();
   const next = await getNextLesson(profile.userId);
-  const quests = await getQuests(profile.userId);
-  const season = await getCurrentSeason();
-  const events = await getUpcomingEvents();
-  const leaderboard = await getLeaderboard();
   const lessonProgress = await getLessonProgress(profile.userId);
   const announcements = await getAnnouncements();
-  const claims = await recentClaims(profile.userId);
+  const tracks = await getTracks();
+  const allLessons = await getAllLessons();
 
   const firstName = profile.displayName.split(" ")[0];
-  const completed = lessonProgress.filter((p) => p.completed).length;
+  const completedIds = new Set(lessonProgress.filter((p) => p.completed).map((p) => p.lessonId));
+  const completedCount = completedIds.size;
 
-  const seasonStart = new Date(season.startsAt).getTime();
-  const seasonEnd = new Date(season.endsAt).getTime();
-  const now = Date.now();
-  const seasonPct = Math.max(
-    0,
-    Math.min(100, Math.round(((now - seasonStart) / (seasonEnd - seasonStart)) * 100)),
+  const trackData = await Promise.all(
+    tracks.map(async (t) => {
+      const modules = await getModulesForTrack(t.id);
+      const lessons = allLessons.filter((l) => modules.some((m) => m.id === l.moduleId));
+      const completed = lessons.filter((l) => completedIds.has(l.id)).length;
+      return { ...t, totalLessons: lessons.length, completed };
+    }),
   );
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      {/* Hero strip */}
+    <div className="space-y-10 animate-fade-in">
+      {/* ── Hero ──────────────────────────────────────────── */}
       <section className="grid gap-5 lg:grid-cols-[2fr_1fr]">
         <Card className="relative overflow-hidden p-7">
           <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-bsc-blue/30 blur-3xl" />
@@ -68,23 +60,36 @@ export default async function DashboardPage() {
               Good to see you, {firstName}.
             </h1>
             <p className="mt-2 max-w-xl text-white/70">
-              You've completed{" "}
-              <span className="font-semibold text-white">{completed} lessons</span> and you're{" "}
-              <span className="font-semibold text-white">{profile.levelTitle}</span>.
-              Keep climbing.
+              Welcome to Bow Sports Capital — where you learn the business of sports from the
+              front-office perspective.{" "}
+              {completedCount > 0 ? (
+                <>
+                  You have completed{" "}
+                  <span className="font-semibold text-white">{completedCount} lesson{completedCount !== 1 ? "s" : ""}</span>{" "}
+                  and counting.
+                </>
+              ) : (
+                <>Your first lesson is waiting below.</>
+              )}
             </p>
             <div className="mt-6 max-w-xl">
               <XPBar xp={profile.xp} />
             </div>
-            <div className="mt-6 flex flex-wrap gap-2">
+            <div className="mt-6 flex flex-wrap gap-3">
               {next ? (
-                <Button asChild>
+                <Button asChild size="lg">
                   <Link href={`/lesson/${next.code}`}>
                     Resume: {next.title} <ArrowRight className="h-4 w-4" />
                   </Link>
                 </Button>
-              ) : null}
-              <Button asChild variant="outline">
+              ) : (
+                <Button asChild size="lg">
+                  <Link href="/tracks">
+                    Browse tracks <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              )}
+              <Button asChild variant="outline" size="lg">
                 <Link href="/tracks">Browse tracks</Link>
               </Button>
             </div>
@@ -95,215 +100,131 @@ export default async function DashboardPage() {
         <OnDeckCard lesson={next} />
       </section>
 
-      {/* Announcements */}
+      {/* ── Announcements ─────────────────────────────────── */}
       {announcements.length > 0 ? (
         <div className="glass-panel flex items-start gap-4 p-5">
-          <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-primary/20 text-primary">
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/20 text-primary">
             <Sparkles className="h-4 w-4" />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-white">{announcements[0].title}</div>
-            <div className="text-sm text-white/70">{announcements[0].body}</div>
+            <div className="mt-0.5 text-sm text-white/70">{announcements[0].body}</div>
           </div>
-          <Button variant="ghost" size="sm">
+          <Button variant="ghost" size="sm" className="shrink-0">
             Got it
           </Button>
         </div>
       ) : null}
 
-      <section className="grid gap-5 lg:grid-cols-3">
-        {/* Daily quests */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Target className="h-4 w-4 text-primary" /> Daily quests
-            </CardTitle>
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/quests">
-                All <ArrowRight className="h-3 w-3" />
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {quests.slice(0, 4).map((q) => (
-              <div
-                key={q.id}
-                className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.02] p-3"
-              >
-                {q.completed ? (
-                  <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-                ) : (
-                  <Circle className="h-5 w-5 text-white/30" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-white">{q.title}</div>
-                  <div className="text-xs text-white/50">{q.description}</div>
-                </div>
-                <Badge variant={q.completed ? "success" : "outline"}>+{q.rewardPoints} XP</Badge>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+      {/* ── Your tracks ───────────────────────────────────── */}
+      <section>
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <h2 className="font-display text-2xl font-bold text-white">Your tracks</h2>
+            <p className="mt-1 text-sm text-white/60">
+              Three paths. One front office. Pick up where you left off.
+            </p>
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/tracks">
+              All tracks <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </Button>
+        </div>
 
-        {/* Streak + Season */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Flame className="h-4 w-4 text-orange-400" /> Streak & season
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="rounded-xl border border-orange-400/20 bg-orange-400/5 p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-display text-3xl font-bold text-white number-tabular">
-                    {profile.streakDays}
-                  </div>
-                  <div className="text-xs text-white/60">day streak</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Flame className="h-8 w-8 text-orange-400" />
-                  {profile.streakShields > 0 ? (
-                    <Badge variant="warning">
-                      🛡 {profile.streakShields} shield{profile.streakShields > 1 ? "s" : ""}
-                    </Badge>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-white/60">{season.title}</span>
-                <span className="text-white/50 number-tabular">{seasonPct}%</span>
-              </div>
-              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/5">
+        <div className="grid gap-5 md:grid-cols-3">
+          {trackData.map((t) => {
+            const progressPct = pct(t.completed, t.totalLessons);
+            return (
+              <Card key={t.id} className="relative overflow-hidden">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-bsc-sky to-bsc-blue"
-                  style={{ width: `${seasonPct}%` }}
+                  className="pointer-events-none absolute -top-20 left-0 h-40 w-full opacity-25 blur-3xl"
+                  style={{ background: t.accentColor }}
                 />
-              </div>
-              <div className="mt-2 flex justify-between text-[11px] text-white/40 number-tabular">
-                <span>{new Date(season.startsAt).toLocaleDateString()}</span>
-                <span>{new Date(season.endsAt).toLocaleDateString()}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                <div className="relative">
+                  <div className="flex items-center justify-between">
+                    <Badge variant="outline" className="font-display tracking-widest">
+                      TRACK {t.code}
+                    </Badge>
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{
+                        backgroundColor: t.accentColor,
+                        boxShadow: `0 0 10px ${t.accentColor}`,
+                      }}
+                    />
+                  </div>
+                  <h3 className="mt-4 font-display text-xl font-bold text-white">{t.name}</h3>
+                  <p className="mt-2 text-sm text-white/60 line-clamp-2">{t.description}</p>
 
-        {/* Leaderboard preview */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Trophy className="h-4 w-4 text-amber-300" /> Leaderboard
-            </CardTitle>
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/leaderboard">
-                Full <ArrowRight className="h-3 w-3" />
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {leaderboard.slice(0, 6).map((row) => (
-              <div
-                key={row.userId}
-                className={`flex items-center gap-3 rounded-xl px-3 py-2 ${
-                  row.userId === profile.userId
-                    ? "bg-primary/10 ring-1 ring-primary/30"
-                    : "hover:bg-white/[0.03]"
-                }`}
-              >
-                <div className="w-6 text-xs font-bold text-white/60 number-tabular">
-                  #{row.rank}
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between text-xs text-white/60">
+                      <span className="number-tabular">
+                        {t.completed}/{t.totalLessons} lessons
+                      </span>
+                      <span className="number-tabular">{progressPct}%</span>
+                    </div>
+                    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-white/5">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${progressPct}%`,
+                          background: `linear-gradient(90deg, ${t.accentColor}, #ffffff50)`,
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <Button asChild variant="outline" className="mt-5 w-full">
+                    <Link href={`/tracks/${t.code}`}>
+                      Open <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
                 </div>
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-xs font-semibold">
-                  {row.displayName
-                    .split(" ")
-                    .map((n) => n[0])
-                    .slice(0, 2)
-                    .join("")}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-white">{row.displayName}</div>
-                  <div className="text-xs text-white/50">Lv {row.level} · {row.levelTitle}</div>
-                </div>
-                <div className="text-sm font-semibold text-white number-tabular">
-                  {formatNumber(row.xp)}
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+              </Card>
+            );
+          })}
+        </div>
       </section>
 
-      {/* Events + Recent XP */}
-      <section className="grid gap-5 lg:grid-cols-[2fr_1fr]">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <CalendarClock className="h-4 w-4 text-primary" /> Upcoming events
-            </CardTitle>
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/events">
-                All events <ArrowRight className="h-3 w-3" />
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2">
-            {events.map((e) => (
-              <div
-                key={e.id}
-                className="rounded-xl border border-white/5 bg-white/[0.02] p-4 transition hover:border-white/10"
-              >
-                <div className="flex items-center justify-between">
-                  <Badge variant={e.status === "LIVE" ? "success" : "outline"}>{e.status}</Badge>
-                  <span className="text-xs text-white/50">
-                    {new Date(e.openAt).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </span>
+      {/* ── The podcast ───────────────────────────────────── */}
+      <section>
+        <Card className="relative overflow-hidden">
+          <div className="pointer-events-none absolute -left-16 -top-16 h-56 w-56 rounded-full bg-[#1db954]/20 blur-3xl" />
+          <div className="relative grid gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#1db954]/20">
+                  <Headphones className="h-4 w-4 text-[#1db954]" />
                 </div>
-                <div className="mt-3 font-display text-lg font-semibold text-white">{e.title}</div>
-                <div className="mt-1 text-sm text-white/60">{e.description}</div>
-                {e.participants ? (
-                  <div className="mt-3 text-xs text-white/50">
-                    {e.participants} students signed up
-                  </div>
-                ) : null}
+                <span className="text-xs font-semibold uppercase tracking-wider text-white/50">
+                  Podcast
+                </span>
               </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Zap className="h-4 w-4 text-primary" /> Recent XP
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {claims.slice(0, 6).map((c) => (
-              <div
-                key={c.id}
-                className="flex items-center justify-between rounded-lg bg-white/[0.02] px-3 py-2"
-              >
-                <div className="min-w-0">
-                  <div className="text-xs font-medium text-white/80">
-                    Lesson {c.lessonId.replace("l_", "").toUpperCase()}
-                  </div>
-                  <div className="text-[11px] text-white/40">{relativeTime(c.submittedAt)}</div>
-                </div>
-                <Badge variant="success" className="number-tabular">
-                  +{c.xpAwarded}
-                </Badge>
-              </div>
-            ))}
-          </CardContent>
+              <h2 className="mt-3 font-display text-2xl font-bold text-white">
+                The Bow Sports Capital Podcast
+              </h2>
+              <p className="mt-2 max-w-lg text-sm text-white/65">
+                Listen as you learn. Every lesson is paired with an episode that breaks down the
+                front-office concepts in conversation — perfect for your commute or warmup.
+              </p>
+              <Button asChild variant="outline" size="sm" className="mt-4">
+                <Link href="https://open.spotify.com/" target="_blank" rel="noopener noreferrer">
+                  <BookOpen className="h-3.5 w-3.5" /> Open on Spotify
+                </Link>
+              </Button>
+            </div>
+            <div className="w-full lg:w-[340px]">
+              <PodcastWidget />
+            </div>
+          </div>
         </Card>
       </section>
     </div>
   );
 }
+
+// ── On Deck card ─────────────────────────────────────────────────────────────
 
 function OnDeckCard({
   lesson,
@@ -318,7 +239,7 @@ function OnDeckCard({
         </CardHeader>
         <CardContent>
           <p className="text-sm text-white/60">
-            You've completed every published lesson. Watch the Events feed for the next drop.
+            You have completed every published lesson. Check back soon for the next drop.
           </p>
         </CardContent>
       </Card>
@@ -332,9 +253,11 @@ function OnDeckCard({
           <Badge variant="outline" className="font-display tracking-widest">
             ON DECK
           </Badge>
-          <Badge variant={lesson.difficulty === "Hard" ? "warning" : "secondary"}>
-            {lesson.difficulty}
-          </Badge>
+          {lesson.difficulty ? (
+            <Badge variant={lesson.difficulty === "Hard" ? "warning" : "secondary"}>
+              {lesson.difficulty}
+            </Badge>
+          ) : null}
         </div>
         <h3 className="mt-4 font-display text-xl font-bold text-white">{lesson.title}</h3>
         <p className="mt-2 text-sm text-white/60">{lesson.summary}</p>
@@ -365,5 +288,28 @@ function OnDeckCard({
         </Button>
       </div>
     </Card>
+  );
+}
+
+// ── Podcast widget ────────────────────────────────────────────────────────────
+// No show URL yet — render a placeholder. Swap the constant below for a real
+// Spotify show URL (open.spotify.com/show/…) when available.
+
+const SPOTIFY_SHOW_URL = "";
+
+function PodcastWidget() {
+  if (SPOTIFY_SHOW_URL) {
+    return <SpotifyPlayer embedUrl={SPOTIFY_SHOW_URL} title="Bow Sports Capital Podcast" />;
+  }
+  return (
+    <div className="glass-panel flex flex-col items-center justify-center gap-3 p-6 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#1db954]/10">
+        <Headphones className="h-6 w-6 text-[#1db954]" />
+      </div>
+      <div className="text-sm font-semibold text-white">Coming soon</div>
+      <p className="text-xs text-white/50">
+        The show is in production. Episodes will appear here when published.
+      </p>
+    </div>
   );
 }
