@@ -1,0 +1,35 @@
+# dependencies
+node_modules
+.pnpm-store
+
+# next
+.next
+out
+next-env.d.ts
+
+# production
+build
+dist
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# misc
+.DS_Store
+*.log
+.vercel
+.turbo
+.idea
+.vscode
+
+# drizzle
+drizzle/meta
+
+# typescript
+tsconfig.tsbuildinfo
+
+# os
+Thumbs.db
